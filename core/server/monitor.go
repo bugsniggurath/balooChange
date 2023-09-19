@@ -585,7 +585,7 @@ func clearProxyCache() {
 			utils.AddLogs("Did Not Clear Cached Captchas", "debug")
 		}
 		firewall.Mutex.Unlock()
-		time.Sleep(2 * time.Minute)
+		time.Sleep(2 * time.Minute) // clear cache blocked ip's every 2 min
 	}
 }
 
@@ -618,7 +618,7 @@ func clearOutdatedCache() {
 		utils.AddLogs("Cleared Outdated Cache", "debug")
 		firewall.Mutex.Unlock()
 
-		time.Sleep(5 * time.Hour)
+		time.Sleep(5 * time.Hour) // clear domain cache every 5 hours
 	}
 }
 

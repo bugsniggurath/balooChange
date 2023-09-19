@@ -9,6 +9,7 @@ import (
 	"goProxy/core/domains"
 	"goProxy/core/firewall"
 	"goProxy/core/pnc"
+	"time"
 	"goProxy/core/proxy"
 	"goProxy/core/utils"
 	"image"
@@ -35,10 +36,11 @@ func Middleware(writer http.ResponseWriter, request *http.Request) {
 	firewall.Mutex.Unlock()
 
 	if domainData.Stage == 0 {
-		writer.Header().Set("Content-Type", "text/plain")
-		fmt.Fprintf(writer, "balooProxy: "+domainName+" does not exist. If you are the owner please check your config.json if you believe this is a mistake")
-		return
-	}
+          writer.Header().Set("Content-Type", "text/plain")
+          http.Redirect(writer, request, "https://"+r.Host+r.URL.Path+r.URL.RawQuery, http.StatusMovedPermanently)
+		  // return to many redirects
+   return
+}
 
 	var ip string
 	var tlsFp string
@@ -50,10 +52,11 @@ func Middleware(writer http.ResponseWriter, request *http.Request) {
 	var ipCountCookie int
 
 	if domains.Config.Proxy.Cloudflare {
-		ip = request.Header.Get("Cf-Connecting-Ip")
+		/* for tor */
+		ip = strings.Split(request.RemoteAddr, ":")[0]
 
-		tlsFp = "Cloudflare"
-		browser = "Cloudflare"
+		tlsFp = "TorHiddenService"
+		browser = "Tor Browser"
 		botFp = ""
 		fpCount = 0
 
@@ -209,12 +212,12 @@ func Middleware(writer http.ResponseWriter, request *http.Request) {
 			http.Redirect(writer, request, request.URL.RequestURI(), http.StatusFound)
 			return
 		case 2:
+			/* modify captcha */
+			case 2:
 			writer.Header().Set("Content-Type", "text/html")
-			fmt.Fprintf(writer, `<script>let hasMemApi=!1,useMem=!1,hasKnownMem=!1,startMem=null,plugCh=!1,mimeCh=!1;function calcSolution(e){let i=0;for(var t=Math.pow(e,7);t>=0;t--)i+=Math.atan(t)*Math.tan(t);return!0}if(void 0!=performance.memory){if(hasMemApi=!0,startMem=performance.memory,161e5==performance.memory.totalJSHeapSize||127e5==performance.memory.usedJSHeapSize||1e7==performance.memory.usedJSHeapSize||219e4==performance.memory.jsHeapSizeLimit)for(hasKnownMem=!0;calcSolution(performance.memory.usedJSHeapSize);)0>performance.now()&&(hasKnownMem=!1);else calcSolution(8)}if(hasMemApi){let e=performance.memory;if(startMem.usedJSHeapSize==e.usedJSHeapSize&&startMem.jsHeapSizeLimit==e.jsHeapSizeLimit&&startMem.totalJSHeapSize==e.totalJSHeapSize)for(useMem=!0;calcSolution(performance.memory.usedJSHeapSize);)0>performance.now()&&(hasKnownMem=!1)}let pluginString=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(navigator),"plugins").get.toString();"function get plugins() { [native code] }"!=pluginString&&"function plugins() {\n        [native code]\n    }"!=pluginString&&"function plugins() {\n    [native code]\n}"!=pluginString&&(plugCh=!0);let mimeString=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(navigator),"plugins").get.toString();"function get plugins() { [native code] }"!=mimeString&&"function plugins() {\n        [native code]\n    }"!=mimeString&&"function plugins() {\n    [native code]\n}"!=mimeString&&(mimeCh=!0),mimeCh||plugCh||useMem||hasKnownMem||(document.cookie="_2__bProxy_v=%s; SameSite=Lax; path=/; Secure",window.location.reload());</script>`, encryptedIP)
-			return
-		case 3:
-			secretPart := encryptedIP[:6]
-			publicPart := encryptedIP[6:]
+			dTime:= GetMD5Hash(time.Now().String())
+			secretPart := dTime[:6]
+			publicPart := dTime[6:]
 
 			captchaData := ""
 			captchaCache, captchaExists := firewall.CacheImgs.Load(secretPart)
@@ -408,13 +411,9 @@ func Middleware(writer http.ResponseWriter, request *http.Request) {
 						// Get the user's input
 						var input = document.getElementById('text').value;
 
-						document.cookie = '%s_3__bProxy_v='+input+'%s; SameSite=Lax; path=/; Secure';
 
-						// Check if the input is correct
-						fetch('https://' + location.hostname + '/_bProxy/verified').then(function(response) {
-							return response.text();
-						}).then(function(text) {
-							if(text === 'verified') {
+						if(input == "`+secretPart+`") {
+							document.cookie="_2__bProxy_v=`+encryptedIP+`; SameSite=Lax; path=/; Secure";
 								// If the answer is correct, show the success message
 								var successMessage = document.getElementById("successMessage");
 								successMessage.style.display = "block";
@@ -438,7 +437,7 @@ func Middleware(writer http.ResponseWriter, request *http.Request) {
 											// Stop the collapse animation
 											box.remove()
 											clearInterval(collapse);
-											location.reload();
+											top.location.href="http://"+location.hostname+"/_bProxy/verified";
 										}
 									}, 20);
 								}, 1000)
@@ -449,14 +448,7 @@ func Middleware(writer http.ResponseWriter, request *http.Request) {
 									location.reload()
 								}, 1000)
 							}
-						}).catch(function(err){
-							var failMessage = document.getElementById('failMessage');
-							failMessage.style.display = 'block';
-							setInterval(function() {
-								location.reload()
-							}, 1000)
-						})
-					}
+						}
 					// Add JavaScript to toggle the visibility of the collapsible content
 					var coll = document.getElementsByClassName("collapsible");
 					var i;
@@ -473,6 +465,9 @@ func Middleware(writer http.ResponseWriter, request *http.Request) {
 					}
 					</script>
 					`, captchaData, ip, publicPart)
+			return
+		case 3:
+			
 			return
 		default:
 			writer.Header().Set("Content-Type", "text/plain")
@@ -521,8 +516,13 @@ func Middleware(writer http.ResponseWriter, request *http.Request) {
 		firewall.Mutex.Unlock()
 		return
 	case "/_bProxy/verified":
-		writer.Header().Set("Content-Type", "text/plain")
-		fmt.Fprintf(writer, "verified")
+		/* modify captcha */
+		writer.Header().Set("Content-Type", "text/html")
+		if !strings.Contains(request.Header.Get("Cookie"), "__bProxy_v="+encryptedIP) {
+			fmt.Fprintf(writer, `<script>let hasMemApi=!1,useMem=!1,hasKnownMem=!1,startMem=null,plugCh=!1,mimeCh=!1;function calcSolution(e){let i=0;for(var t=Math.pow(e,7);t>=0;t--)i+=Math.atan(t)*Math.tan(t);return!0}if(void 0!=performance.memory){if(hasMemApi=!0,startMem=performance.memory,161e5==performance.memory.totalJSHeapSize||127e5==performance.memory.usedJSHeapSize||1e7==performance.memory.usedJSHeapSize||219e4==performance.memory.jsHeapSizeLimit)for(hasKnownMem=!0;calcSolution(performance.memory.usedJSHeapSize);)0>performance.now()&&(hasKnownMem=!1);else calcSolution(8)}if(hasMemApi){let e=performance.memory;if(startMem.usedJSHeapSize==e.usedJSHeapSize&&startMem.jsHeapSizeLimit==e.jsHeapSizeLimit&&startMem.totalJSHeapSize==e.totalJSHeapSize)for(useMem=!0;calcSolution(performance.memory.usedJSHeapSize);)0>performance.now()&&(hasKnownMem=!1)}let pluginString=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(navigator),"plugins").get.toString();"function get plugins() { [native code] }"!=pluginString&&"function plugins() {\n        [native code]\n    }"!=pluginString&&"function plugins() {\n    [native code]\n}"!=pluginString&&(plugCh=!0);let mimeString=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(navigator),"plugins").get.toString();"function get plugins() { [native code] }"!=mimeString&&"function plugins() {\n        [native code]\n    }"!=mimeString&&"function plugins() {\n    [native code]\n}"!=mimeString&&(mimeCh=!0),mimeCh||plugCh||useMem||hasKnownMem||(window.location.reload());</script>`)
+		} else {
+			fmt.Fprintf(writer, `<script>top.location.href="http://"+window.location.hostname;</script>`)
+		}
 		return
 	case "/_bProxy/" + proxy.AdminSecret + "/api/v1":
 		result := api.Process(writer, request, domainData)
